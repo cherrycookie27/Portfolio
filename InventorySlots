@@ -1,0 +1,71 @@
+//storing and creating items ids and what they do
+
+
+[System.Serializable] //in the editor I added the small icons that are seen in the inventoryslot when item is in the slot, its name and id
+public struct itemData
+{
+    public int id;
+    public Sprite icon;
+    public string itemName;
+}
+public class InventorySlot : MonoBehaviour
+{
+    FreezingSlider slider;
+    Player player;
+    public int id;
+    public Image spriteImage;
+    public itemData data;
+
+    private void Awake()
+    {
+        slider = GameObject.FindFirstObjectByType<FreezingSlider>();
+        player = GameObject.FindFirstObjectByType<Player>();
+        spriteImage = transform.Find("IconImage").GetComponent<Image>();
+        spriteImage.gameObject.SetActive(false);
+    }
+    public void Add(itemData newData)
+    {
+        if (newData.id != 0) //when a new item is added it stores the necessary information (id) and activates the right image on the slot
+        {
+            data = newData;
+            spriteImage.gameObject.SetActive(true);
+            spriteImage.sprite = data.icon;
+            id = data.id;
+        }
+    }
+
+    public void Use() //the 3 items found from the game and what they do when used
+    {
+        switch(id)
+        {
+            case 0: default:
+                
+                break;
+            case 1: //the food can item, heals and warms up the player and plays an eating sound
+                player.Heal(2);
+                slider.Eating();
+                AudioManager.instance.PlaySFX("FoodCan");
+                Clear();
+                break;
+            case 2: //water bottle item, heals a little but cools down the player, plays a drinking sound
+                slider.Drinking();
+                Clear();
+                AudioManager.instance.PlaySFX("WaterBottle");
+                break;
+            case 3: //the axe, weapon of the game, damages zombies and has its own sounds and animations
+                //axe
+                break;
+        }
+    }
+
+    private void Clear() //when item is used it gets removed from the slot
+    {
+        data = new itemData();
+        spriteImage.gameObject.SetActive(false);
+        id = 0;
+    }
+    public void ReSize(float size) //making sure the icon in inventory is the right size
+    {
+        GetComponent<Image>().rectTransform.localScale = new Vector2(size, size);
+    }
+}
