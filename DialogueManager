@@ -1,0 +1,197 @@
+//this script is the manager script for my dialogue system in one of my games. It takes care of how
+//and when dialogue is playing. The system also takes care of different choices and choice buttons.
+//The system gets its dialogue files where all of the actual text that will be shown fronm Ink JSONs 
+//that I have made with Ink. 
+
+public class DialogueManager : MonoBehaviour
+{
+    public static DialogueManager instance;
+    public Rigidbody rb;
+
+    public GameObject dialogueBox;
+    public TextMeshProUGUI dialogueText;
+    public GameObject choiceButtonPrefab;
+    public Transform choiceButtonContainer;
+
+    public float letterDelay = .02f;
+
+    Story _inkStory;
+    Coroutine typingCoroutine;
+    int selectedChoice = -1;
+    bool isTyping = false;
+    bool dialogueIsPlaying = false;
+
+    public bool IsPlaying => dialogueIsPlaying;
+
+    RigidbodyConstraints savedConstraints;
+    void Start() //makes sure theres only one DialogueManager and that the dialogue box is inactive when starting.
+    {
+        dialogueBox.SetActive(false);
+        
+        if (instance == null)
+        {
+            instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    void Update()  
+    {
+        if (!dialogueIsPlaying) return;
+
+        if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Space))
+
+//during dialogue you can click the mouse button or space to continue forward in the story. This also works for 
+//making all of the dialogue for that part be shown instantly instead of waiting for the letters to appear
+//one by one.
+
+        {
+            if (isTyping) FinishTyping();  //Finishes the slowly appearing dialogue.
+            else if (_inkStory.canContinue &&
+                     _inkStory.currentChoices.Count == 0) ContinueStory();  //After a choice the dialogue continues
+            else if (!_inkStory.canContinue &&
+                     _inkStory.currentChoices.Count == 0) EndDialogue();   //Dialogue ends if no dialogue left
+        }
+    }
+
+//the start for dialogue is handled from dialogueTrigger script that I have not added here. 
+//When the dialogue starts the plyer will freeze and the dialogue box appears.
+
+    public void StartDialogue(Story story)
+    {
+        if (dialogueIsPlaying || story == null) return;
+
+        _inkStory = story;
+        dialogueIsPlaying = true;
+        dialogueBox.SetActive(true);
+        savedConstraints = rb.constraints;
+        rb.constraints = RigidbodyConstraints.FreezeAll;
+        ContinueStory();
+    }
+
+
+    #region Story Continue
+    private void ContinueStory()
+    {
+        if (_inkStory.canContinue)
+        {
+            // Stop any ongoing typing coroutine
+            if (typingCoroutine != null)
+            {
+                StopCoroutine(typingCoroutine);
+            }
+
+            // Start typing the next line of dialogue
+            string nextLine = _inkStory.Continue();
+            typingCoroutine = StartCoroutine(TypeText(nextLine));
+
+            ClearChoices();
+            CreateChoices();
+        }
+//for when there are choices to be made. The buttons appear to the screen and 
+//dialoge continues based on the picked button.
+
+        else if (_inkStory.currentChoices.Count > 0 && selectedChoice >= 0)
+        {
+            // Choose the selected choice
+            _inkStory.ChooseChoiceIndex(selectedChoice);
+            selectedChoice = -1; // Reset after choosing
+
+            // Clear previous dialogue text and choices
+            dialogueText.text = "";
+            ClearChoices();
+            CreateChoices();
+
+            ContinueStory();
+        }
+        else if (_inkStory.currentChoices.Count == 0 && !_inkStory.canContinue)
+        {
+            EndDialogue();  //When there is no more dialogue the dialogue ends.
+        }
+    }
+
+//Makes sure the dialogue box is not active anymore and that the player can move freely.
+    private void EndDialogue() 
+    {
+        dialogueBox?.SetActive(false);
+        ClearChoices();
+        dialogueText.text = "";
+        rb.constraints = savedConstraints;
+    }
+
+//When the player presses the mouse button or space the rest of the dialogue will appear instantly.
+    private void FinishTyping()
+    {
+        if (typingCoroutine != null)
+        {
+            StopCoroutine(typingCoroutine);
+            typingCoroutine = null;
+        }
+        dialogueText.text = _inkStory.currentText;
+        isTyping = false;
+    }
+
+//The part that takes care of the appearing dialogue and the speed that the letters come to the screen with.
+    private IEnumerator TypeText(string text)
+    {
+        dialogueText.text = ""; // Clear the current text
+        isTyping = true;
+
+        foreach (char letter in text)
+        {
+            dialogueText.text += letter;
+            yield return new WaitForSeconds(letterDelay);
+        }
+
+        isTyping = false;
+        typingCoroutine = null; // Reset coroutine reference after finishing
+    }
+
+    #endregion
+
+    #region Choices and buttons
+
+//
+    public void SetChoice(int choiceIndex)
+    {
+        selectedChoice = choiceIndex;
+
+        ContinueStory();
+    }
+
+//checks how many buttons have to be created and what will be written on them.
+    private void CreateChoices()
+    {
+        if (_inkStory.currentChoices.Count > 0)
+        {
+            for (int i = 0; i < _inkStory.currentChoices.Count; i++)
+            {
+                Choice choice = _inkStory.currentChoices[i];
+                CreateChoiceButton(choice.text, i);
+            }
+        }
+    }
+
+//for the creation of the choice button. They use prefabs that I have made and make the choices text appear on the button.
+    private void CreateChoiceButton(string choiceText, int choiceIndex)
+    {
+        GameObject buttonObject = Instantiate(choiceButtonPrefab, choiceButtonContainer);
+        TextMeshProUGUI buttonText = buttonObject.GetComponentInChildren<TextMeshProUGUI>();
+        buttonText.text = choiceText;
+
+        Button button = buttonObject.GetComponent<Button>();
+        button.onClick.AddListener(() => SetChoice(choiceIndex));
+    }
+    private void ClearChoices()
+    {
+        foreach (Transform child in choiceButtonContainer)
+        {
+            Destroy(child.gameObject);
+        }
+    }
+    #endregion
+}
