@@ -1,0 +1,164 @@
+//the enemies script, I also had a boss that appears in the end but I didnt have the time to fully polish the script for it
+
+
+public class Zommby : MonoBehaviour, IEnemy
+{
+    public static Zommby instance;
+    public Transform Transform => this.transform;
+    public int maxHealth = 3;
+
+    public GameObject player;
+    public Animator anim;
+
+    public float patrolRadius;
+    public float speed;
+    public float attackDistance;
+    public int followDistance = 5;
+
+    private bool pleaseStop;
+    private bool isAttacking = false;
+    private float distance;
+    private int currentHealth;
+    private bool knockBack;
+    private bool following;
+    private bool roaming;
+
+    private Vector2 knockBackTarget;
+    private Vector2 lastDirection;
+    private Vector2 patrolCenter;
+    private Vector2 patrolTarget;
+
+    private void Start()
+    {
+        currentHealth = maxHealth;
+        anim = GetComponent<Animator>();
+
+        if (instance == null)
+            instance = this;
+
+        lastDirection = Vector2.down;
+
+
+// stars the random movement for the zombie
+
+        patrolCenter = transform.position;  
+        float x = Random.Range(-patrolRadius, patrolRadius);
+        float y = Random.Range(-patrolRadius, patrolRadius);
+        patrolTarget = new Vector2(x, y) + patrolCenter;
+        anim.SetBool("isMoving", false);
+        Invoke("Roam", 3.6f);
+    }
+
+    private void FixedUpdate()  //handles the movement
+    {
+        distance = Vector2.Distance(transform.position, player.transform.position);
+        Vector2 direction = player.transform.position - transform.position;
+
+        if (knockBack)  //when the player attacks the zombie will be pushed back a little bit
+        {
+            transform.position = Vector2.Lerp(transform.position, knockBackTarget, 10f * Time.fixedDeltaTime);
+            if (Vector2.Distance(transform.position, knockBackTarget) < 1)
+            {
+                knockBack = false;
+                pleaseStop = false;
+            }
+        }
+        if (distance < followDistance && !pleaseStop)  //when the zombie is close enough to the player it will start following them and if theyre in the attack distance they will attack the player
+        {
+            transform.position = Vector2.MoveTowards(this.transform.position, player.transform.position, speed * Time.deltaTime);
+            UpdateDirection(direction);
+            following = true;
+            if (distance < attackDistance && !isAttacking)
+            {
+                StartCoroutine(Attack(player.GetComponent<Player>()));
+                isAttacking = true;
+                pleaseStop = true;  //the zombie wont move while theyre attacking the player
+            }
+        }
+
+        if (distance > followDistance)  //when the player is too far away, starts the zombies wandering around again and stops following the player
+        {
+           if (following)
+            {
+                following = false;
+                patrolCenter = transform.position;
+                float x = Random.Range(-patrolRadius, patrolRadius);
+                float y = Random.Range(-patrolRadius, patrolRadius);
+                patrolTarget = new Vector2(x, y) + patrolCenter;
+                anim.SetBool("isMoving", false);
+                Invoke("Roam", 3.6f);
+            }
+           if (roaming)  //keeps the zombie roaming
+            {
+                Vector2 roamDirection = patrolTarget - (Vector2)transform.position;
+                transform.position = Vector2.MoveTowards(this.transform.position, patrolTarget, speed * Time.deltaTime);
+                UpdateDirection(roamDirection);
+            }
+            if (Vector2.Distance(transform.position, patrolTarget) < 1)  //when the zombie gets to their roam point, it stops for a while and then continues to a new one
+            {
+                patrolCenter = transform.position;
+                float x = Random.Range(-patrolRadius, patrolRadius);
+                float y = Random.Range(-patrolRadius, patrolRadius);
+                patrolTarget = new Vector2(x, y) + patrolCenter;
+                roaming = false;
+                anim.SetBool("isMoving", false);
+                Invoke("Roam", 3.6f);
+            }
+        }
+
+    }
+
+    private void Roam()
+    {
+        roaming = true;
+    }
+
+    private void UpdateDirection(Vector2 direction)  //makes sure the zombie animations work right and change at the right points
+    {
+        if (direction.magnitude > 0.1f)
+        {
+            lastDirection = direction;
+            anim.SetBool("isMoving", true);
+
+            anim.SetFloat("Horizontal", lastDirection.x);
+            anim.SetFloat("Vertical", lastDirection.y);
+        }
+        else
+        {
+            anim.SetBool("isMoving", false);
+        }
+    }
+
+    private void OnCollisionExit2D(Collision2D other)
+    {
+        if (other.gameObject.CompareTag("Player"))
+        {
+            pleaseStop = false;  //when the player isnt on the attack range the zombie will move again
+        }
+    }
+
+    IEnumerator Attack(Player player)
+    {
+        anim.SetTrigger("EnemyAttack");
+        anim.SetFloat("LastHorizontal", lastDirection.x);
+        anim.SetFloat("LastVertical", lastDirection.y);
+        player.TakeDamage(1);
+        AudioManager.instance.PlaySFX("ZombieAttack");
+
+        yield return new WaitForSeconds(2);  //makes sure the zombie stops before a new attack
+        isAttacking = false;
+        pleaseStop = false;
+    }
+
+    public void PlayerAttacking(int amount, Vector2 dir)  //the players attacks towards the zombie, destroys the zombie if its health runs out
+    {
+        currentHealth -= amount;
+        AudioManager.instance.PlaySFX("ZombieHit");
+        knockBackTarget = dir.normalized * 4 + (Vector2)transform.position;
+        knockBack = true;
+        if (currentHealth < 1)
+        {
+            Destroy(gameObject);
+        }
+    }
+}
