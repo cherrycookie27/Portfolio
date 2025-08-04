@@ -1,0 +1,199 @@
+//this code was for the player. It took care of players movement, health, animations etc. 
+
+public class Player : MonoBehaviour
+{
+    public static Player Instance;
+    public Animator anim;
+    FreezingSlider slider;
+
+    public int health;
+    public int maxHealth = 5;
+
+    public float moveSpeed;
+    Rigidbody2D rb;
+
+    private float activeMoveSpeed;
+    public float dashSpeed;
+
+    public float dashLenght = .5f, dashCooldown = 1f;
+
+    private float dashCounter;
+    private float dashCooldownCounter;
+
+    private bool holdingAxe;
+
+    private IEnemy nearbyEnemy;
+
+    public List<Image> heartImages;
+    public Sprite fullHeart;
+    public Sprite emptyHeart;
+
+    private Vector3 moveInput;
+    bool attackCD;
+    void Start()
+    {
+        slider = GameObject.FindFirstObjectByType<FreezingSlider>();
+        health = maxHealth;
+        anim = GetComponent<Animator>();
+        rb = GetComponent<Rigidbody2D>();
+        activeMoveSpeed = moveSpeed;
+
+        if (Instance == null)
+            Instance = this;
+
+        UpdateHearts();
+    }
+
+    private void Update()
+    {
+        moveInput.x = Input.GetAxisRaw("Horizontal");
+        moveInput.y = Input.GetAxisRaw("Vertical");
+
+        moveInput.Normalize();
+
+        rb.velocity = moveInput * activeMoveSpeed;
+
+        anim.SetFloat("Horizontal", moveInput.x);
+        anim.SetFloat("Vertical", moveInput.y);
+        anim.SetFloat("Speed", moveInput.magnitude);
+
+        if (Input.GetKeyDown(KeyCode.Space))  //the player could dash by pressing space
+        {
+            if (dashCooldownCounter <= 0 && dashCounter <= 0)
+            {
+                activeMoveSpeed = dashSpeed;
+                dashCounter = dashLenght;
+                AudioManager.instance.PlaySFX("PlayerDash");
+            }
+        }
+
+        if (dashCounter > 0) //with this I made sure the player stopped dashing and couldnt spam it/wouldnt keep the fast speed. The cooldown was only there to stop infinite spamming, the player still can dash pretty much instantly again
+        {
+            dashCounter -= Time.deltaTime;
+
+            if (dashCounter <= 0)
+            {
+                activeMoveSpeed = moveSpeed;
+                dashCooldownCounter = dashCooldown;
+            }
+        }
+
+        if (dashCooldownCounter > 0)
+        {
+            dashCooldownCounter -= Time.deltaTime;
+        }
+
+        if (Input.GetMouseButtonDown(0) && nearbyEnemy != null)  //making sure the attack happens when player is close enough and deals the damage to a nearby enemy
+        {
+            Attack();
+        }
+
+        if (Input.GetMouseButton(1))  //for when the player wants to use something in their inventory
+        {
+            Inventory.instance.Use();
+        }
+    }
+
+    public void EqipAxe(bool b)
+    {
+        holdingAxe = b;
+        anim.SetBool("HasAxe", b);
+    }
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Enemy"))  //when close enough to an enemy gets their IEnemy interface to handle doing damage to the enemy
+        {
+            nearbyEnemy = other.GetComponentInParent<IEnemy>();
+        }
+        if (other.GetComponent<IPickupable>() != null)  //when close enough to an item can pick it up
+        {
+            other.GetComponent<IPickupable>().PickUp();
+        }
+    }
+
+    private void OnTriggerExit2D(Collider2D other)  //making sure the player cant deal damage to the enemy if theyre not in range anymore
+    {
+        if (other.CompareTag("Enemy"))
+        {
+            if (nearbyEnemy == other.GetComponentInParent<IEnemy>()) 
+            {
+                nearbyEnemy = null;
+            }
+        }
+    }
+
+    public void TakeDamage(int amount)  //for the enemies when they attack the player, also handles the player death
+    {
+        AudioManager.instance.PlaySFX("PlayerHit");
+        health -= amount;
+        if (health < 1)
+        {
+            anim.SetTrigger("IsDead");
+            AudioManager.instance.musicSource.Stop();
+        }
+
+        UpdateHearts();
+    }
+
+    public void Heal(int amount)  
+    {
+        health += amount;
+        if (health > maxHealth)
+        {
+            health = maxHealth;
+        }
+        UpdateHearts();
+    }
+
+    private void UpdateHearts()
+    {
+        for (int i = 0; i < heartImages.Count; i++)
+        {
+            if (i < health)
+            {
+                heartImages[i].sprite = fullHeart;
+            }
+            else
+            {
+                heartImages[i].sprite = emptyHeart;
+            }
+        }
+    }
+
+    private void Dying()  //used in animator when the isdead trigger goes off
+    {
+        SceneManager.LoadScene("LoseScreen");
+        AudioManager.instance.PlayMusic("Lose");
+    }
+
+    public void Attack()
+    {
+        if (attackCD) return;
+
+        if (holdingAxe)  //deals damage if holding the axe and makes sure the player is facing the enemy theyre attacking
+        {
+            attackCD = true;
+            anim.SetTrigger("PlayerAttack");
+            AudioManager.instance.PlaySFX("PlayerAttack");
+            if (nearbyEnemy != null)
+            {
+                Vector2 direction = nearbyEnemy.Transform.position - transform.position; 
+                nearbyEnemy.PlayerAttacking(1, direction);
+            }
+            Invoke("Test", 0.5f);
+        }
+        else  //only pushes the enemy away if not holding the axe, makes sure the player is facing the enemy theyre attacking
+        {
+            if (nearbyEnemy != null)
+            {
+                Vector2 direction = nearbyEnemy.Transform.position - transform.position; 
+                nearbyEnemy.PlayerAttacking(1, direction);
+            }
+        }
+    }
+    void Test()
+    {
+        anim.ResetTrigger("PlayerAttack");
+        attackCD = false;
+    }
+}
