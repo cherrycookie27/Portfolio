@@ -1,0 +1,55 @@
+//I had to create a quick way to add audios and play and pause them. When I needed a song/sound to play I just referenced this script and used the right audios name. All the audios 
+//and their names were set up in the inspector
+
+public class AudioManager : MonoBehaviour
+{
+    public static AudioManager instance;
+    public Sound[] musicSounds, sfxSounds;
+    public AudioSource musicSource, sfxSource;
+
+    private void Awake() //making sure only one audiomanager is existing at time and keeping it alive for scene switches
+    {
+        if (instance == null)
+        {
+            instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    private void Start()
+    {
+        PlayMusic("Menu");
+    }
+    public void PlayMusic(string name) //I could refer to this when I wanted to change the music playing in the backroung, I just needed to use the name I set up in inspector
+    {
+        Sound s = Array.Find(musicSounds, x => x.name == name);
+        if (s == null)
+        {
+            Debug.Log("Sound not found");
+        }
+        else
+        {
+            musicSource.clip = s.clip;
+            musicSource.Play();
+        }
+    }
+
+    public void PlaySFX(string name) //I referred to this when I wanted to play a sound effect for any reason, the effects were named in the inspector too
+    {
+        Sound s = Array.Find(sfxSounds, x => x.name == name);
+
+        if (s == null)
+        {
+            Debug.Log("Sound not found");
+        }
+        else
+        {
+            sfxSource.PlayOneShot(s.clip);
+        }
+    }
+
+}
