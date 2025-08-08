@@ -1,2 +1,2 @@
-# Portfolio
-Highlight scripts from different projects I have been a part of.
+# Other Scripts
+Highlight scripts from my latest and biggest projects I am currently working on. 
