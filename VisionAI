@@ -1,0 +1,222 @@
+//Script for the vision for enemies and npcs. The script works a bit differently depending on if the creature is an enemy or a npc.
+//The enemies have a more complex vision, while npcs have a simple "look at target if can" type of logic.
+
+public class VisionAI : MonoBehaviour
+{
+    public static VisionAI instance;
+
+    public GameObject player;
+    public GameObject alarmed;
+    public GameObject noticed;
+
+    public LayerMask targetMask;
+    public LayerMask obstructionMask;
+
+    public bool canBeAlerted;
+
+    [Header("Vision field")]  //this is the actual vision of the creature
+    public float priorityRadius;
+    public float radius;
+    [Range(0, 360)] public float angle;
+
+    [Header("Alert field")]  //the enemies have an alert field, where if the player moves to, the enemy checks if there is something there.
+    public float alertRadius;
+    [Range(0, 360)] public float alertAngle;
+    public float soundAlert;
+
+    [Header("Speeds")]
+    public float alertBreak = 3f;
+    public float turnSpeed = 100f;
+
+    [Header("Testing")]
+    public bool canSeeTarget;
+
+    bool alerted;
+    bool noticedRoutineRunning = false;
+
+    private bool turningToAlertedPosition = false;
+    public Transform currentTarget;
+    private Vector3 lastKnownLocation;
+
+    private void Start()
+    {
+        StartCoroutine(FOVRoutine());
+        alarmed.SetActive(false);
+        noticed.SetActive(false);
+    }
+
+    private void Update()  //makes sure the creature turns toward target (player)
+    {
+        if (currentTarget != null)
+        {
+            RotateTowards(currentTarget.position);
+        }
+        else if (turningToAlertedPosition)
+        {
+            RotateTowards(lastKnownLocation);
+        }
+    }
+
+    IEnumerator FOVRoutine()  //keeps checking if there is something in the raycast vision area
+    {
+        WaitForSeconds wait = new WaitForSeconds(0.2f);
+        while (true)
+        {
+            yield return wait;
+            FieldOfViewCheck();
+        }
+    }
+
+    void FieldOfViewCheck()  //the vision for both enemies and npcs.
+    {
+        canSeeTarget = false;
+        currentTarget = null;
+
+        Collider[] rangeChecks = Physics.OverlapSphere(transform.position, radius, targetMask);  //the area that the creature checks to see if someones there
+
+        Transform closestNonPlayerTarget = null;
+        float closestNonPlayerDistance = float.MaxValue;
+
+        for (int i = 0; i < rangeChecks.Length; i++)
+        {
+            Collider targetCollider = rangeChecks[i];
+            Transform target = targetCollider.transform;
+            if (target == transform) continue;
+
+            Vector3 directionToTarget = (target.position - transform.position).normalized;
+            float distanceToTarget = Vector3.Distance(transform.position, target.position);
+
+            if (Vector3.Angle(transform.forward, directionToTarget) < angle / 2 && distanceToTarget <= radius)
+            {
+                if (!Physics.Raycast(transform.position, directionToTarget, distanceToTarget, obstructionMask))
+                {
+                    //make it (later when done w damage for player) prioritise target close to it dealing damage to it
+
+                    // Prioritize player if theyre within priority radius
+                    if (target.CompareTag("Player") && distanceToTarget <= priorityRadius)
+                    {
+                        currentTarget = target;
+                        canSeeTarget = true;
+                        turningToAlertedPosition = false;
+
+                        if (!noticedRoutineRunning)
+                        {
+                            StartCoroutine(NoticedTarget());
+                        }
+                        return;
+                    }
+
+                    // Track closest target if no player close
+                    else if (distanceToTarget < closestNonPlayerDistance)
+                    {
+                        closestNonPlayerDistance = distanceToTarget;
+                        closestNonPlayerTarget = target;
+                        canSeeTarget = true;
+
+                        if (!noticedRoutineRunning)
+                        {
+                            StartCoroutine(NoticedTarget());
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no player in priority radius, follow the closest target\
+        if (closestNonPlayerTarget != null)
+        {
+            currentTarget = closestNonPlayerTarget;
+            canSeeTarget = true;
+            turningToAlertedPosition = false;
+        }
+
+        // Alert field, only for enemies.
+        if (canBeAlerted)
+        {
+            Collider[] alertChecks = Physics.OverlapSphere(transform.position, alertRadius, targetMask);
+            foreach (Collider targetCollider in alertChecks)
+            {
+                Transform target = targetCollider.transform;
+                if (target == transform) continue;
+
+                Vector3 directionToTarget = (target.position - transform.position).normalized;
+                float distanceToTarget = Vector3.Distance(transform.position, target.position);
+
+                if (Vector3.Angle(transform.forward, directionToTarget) < alertAngle / 2 && distanceToTarget <= alertRadius)
+                {
+                    if (!Physics.Raycast(transform.position, directionToTarget, distanceToTarget, obstructionMask))
+                    {
+                        if (!alerted)  //if the target moved to the alert range. The enemy will mark the triggered location and then turn towards it
+                        {
+                            alerted = true;
+                            lastKnownLocation = target.position;
+                            StartCoroutine(Alerted());
+                        }
+                        alerted = false;
+                        return;
+                    }
+                }
+                if (distanceToTarget < soundAlert) //different range for sound distractions, this isnt yet fully incorporated to the game
+                {
+                    if (!alerted)
+                    {
+                        alerted = true;
+                        lastKnownLocation = target.position;
+                        StartCoroutine(Alerted());
+                    }
+                    alerted = false;
+                    return;
+                }
+            }
+        }
+    }
+
+    IEnumerator NoticedTarget()  //when the enemy sees the target they will get an axclamation mark on top of them for 2 seconds
+    {
+        if (canBeAlerted)
+        {
+            noticedRoutineRunning = true;
+
+            noticed.SetActive(true);
+            alarmed.SetActive(false);
+            yield return new WaitForSeconds(2);
+
+            noticed.SetActive(false);
+
+            while (canSeeTarget)
+            {
+                yield return new WaitForSeconds(0.1f);
+            }
+
+            noticedRoutineRunning = false;
+        }
+    }
+    IEnumerator Alerted()  //when target moves to alert range, the enemy has a questionmark for 2 seconds on top of them to make clear the enemy will turn to check soon
+    {
+        if (!canSeeTarget && canBeAlerted)
+        {
+            alarmed.SetActive(true);
+            yield return new WaitForSeconds(2f);
+            alerted = false;
+
+            turningToAlertedPosition = true;
+            yield return new WaitUntil(() => !turningToAlertedPosition);
+
+            yield return new WaitForSeconds(alertBreak);
+            alarmed.SetActive(false);
+        }
+    }
+
+    void RotateTowards(Vector3 targetPosition)  //when the creature is looking at the target
+    {
+        Vector3 direction = (targetPosition - transform.position).normalized;
+        Quaternion targetRotation = Quaternion.LookRotation(new Vector3(direction.x, 0, direction.z));
+
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, turnSpeed * Time.deltaTime);
+
+        if (Quaternion.Angle(transform.rotation, targetRotation) < 1f)
+        {
+            turningToAlertedPosition = false;
+        }
+    }
+}
